@@ -15,7 +15,6 @@ flags.DEFINE_integer('random_seed', 123, 'Value of random seed')
 FLAGS = flags.FLAGS
 
 # Set random seed
-# Todo: Check if random is being used
 tf.set_random_seed(FLAGS.random_seed)
 random.seed(FLAGS.random_seed)
 

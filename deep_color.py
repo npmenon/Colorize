@@ -44,23 +44,17 @@ class AutoColor(BaseModel):
                                                                                reuse_variables=True)
 
             # Calculate loss for discriminator and generator
-
             self.dis_loss, self.gen_loss = self.calculate_loss()
 
-        # Get all the training variables
+        # Get all the training variables of generator and discriminator
         t_vars = tf.trainable_variables()
         self.disc_vars = [var for var in t_vars if 'dis_' in var.name]
         self.gen_vars = [var for var in t_vars if 'gen_' in var.name]
 
         # Optimize loss function using Adam Optimizer
-        # with tf.variable_scope('optimizer'):
-        #     self.gen_optimizer, self.dis_optimizer = self.optimize()
+        self.gen_optimizer, self.dis_optimizer = self.optimize()
 
-        self.gen_optimizer = tf.train.AdamOptimizer(learning_rate=0.002, beta1=0.5).minimize(self.gen_loss,
-                                                                                             var_list=self.gen_vars)
-        self.dis_optimizer = tf.train.AdamOptimizer(learning_rate=0.002, beta1=0.5).minimize(self.dis_loss,
-                                                                                             var_list=self.disc_vars)
-
+        # to keep track of global step and logging purposes
         with tf.variable_scope('step'):
             self.step_op = tf.Variable(0, trainable=False, name='global_step')
             self.step_input = tf.placeholder('int32', None, name='step_input')
@@ -80,6 +74,13 @@ class AutoColor(BaseModel):
 
         # Load saved model
         self.load_model()
+
+    def optimize(self):
+        gen_optimizer = tf.train.AdamOptimizer(learning_rate=0.002, beta1=0.5).minimize(self.gen_loss,
+                                                                                        var_list=self.gen_vars)
+        dis_optimizer = tf.train.AdamOptimizer(learning_rate=0.002, beta1=0.5).minimize(self.dis_loss,
+                                                                                        var_list=self.disc_vars)
+        return gen_optimizer, dis_optimizer
 
     def create_placeholders(self):
         edge_images = None
@@ -236,10 +237,10 @@ class AutoColor(BaseModel):
         return tf.nn.tanh(dec_layer5)
 
     def build_discriminator(self, input_image, out_dimen, reuse_variables=False):
-        # Reuse already created variables
+        # Reuse already created variables from the previous step
         if reuse_variables:
             tf.get_variable_scope().reuse_variables()
-        else:
+        else:  # check whether reuse of variables is disabled
             assert tf.get_variable_scope().reuse == False
 
         with tf.variable_scope('dis_layer1'):
@@ -264,15 +265,19 @@ class AutoColor(BaseModel):
         self.start_step = tf.get_default_graph().get_tensor_by_name('step/global_step:0').eval()
 
         data = glob(os.path.join("imgs", "*.jpg"))
-        sample_image_processing(data, self.batch_size)
-        num_image = len(data)
+
+        # sample_image_processing(data, self.batch_size, self.cnn_format)
+        batch_files = data[0:self.batch_size]
+        valid_norm, valid_edge, valid_noise = process_batch(batch_files, self.cnn_format)
+
+        num_iter = len(data) / self.batch_size
 
         for self.step in tqdm(range(self.start_step, self.max_step), ncols=70, initial=self.start_step):
 
             # save current step for future
             self.sess.run(self.step_assign_op, feed_dict={self.step_input: self.step})
 
-            for iter in xrange(num_image / self.batch_size):
+            for iter in xrange(num_iter):
                 # select next batch of images
                 batch_files = data[iter * self.batch_size: (iter + 1) * self.batch_size]
 
@@ -286,17 +291,40 @@ class AutoColor(BaseModel):
                                             feed_dict={self.edge_image: batch_edge, self.noise: batch_noise,
                                                        self.real_images: batch_normalized})
 
-                print('Epoch: {0}, Batch: {1} of {2}, gen_loss: {3}, dis_loss: {4}'.format(self.step, iter, (
-                    num_image / self.batch_size), gen_loss, dis_loss))
+                print('Epoch: {0}, Batch: {1} of {2}, gen_loss: {3}, dis_loss: {4}'.format(self.step, iter, num_iter,
+                                                                                           gen_loss, dis_loss))
 
                 # save checkpoint
-                if iter % 500:
+                if iter % 500 == 0:
                     self.save_model(self.step)
 
                 # Test Run using Generator
-                if iter % 100:
+                if iter % 100 == 0:
                     gen_test = self.sess.run(self.generated_images,
-                                             feed_dict={self.edge_image: batch_edge, self.noise: batch_noise})
+                                             feed_dict={self.edge_image: valid_edge, self.noise: valid_noise,
+                                                        self.real_images: valid_norm})
+                    store_image("train_out/" + str(self.step) + '_' + str(iter) + "_gen.jpg",
+                                concat_img_color(gen_test, self.batch_size_sqrt, self.cnn_format))
 
     def test(self):
-        pass
+        data = glob(os.path.join("imgs", "*.jpg"))
+        num_iter = self.test_size / self.batch_size
+
+        for iter in xrange(num_iter):
+            # select next batch of images
+            batch_files = data[iter * self.batch_size: (iter + 1) * self.batch_size]
+
+            # process the batch of images
+            batch_normalized, batch_edge, batch_noise = process_batch(batch_files, self.cnn_format)
+
+            gen_test = self.sess.run(self.generated_images,
+                                     feed_dict={self.edge_image: batch_edge, self.noise: batch_noise,
+                                                self.real_images: batch_normalized})
+            store_image("test_out/" + str(iter) + "_gen.jpg",
+                        concat_img_color(gen_test, self.batch_size_sqrt, self.cnn_format))
+            store_image("test_out/" + str(iter) + "_real.jpg",
+                        concat_img_color(batch_normalized, self.batch_size_sqrt, self.cnn_format))
+            store_image("test_out/" + str(iter) + "_noise.jpg",
+                        concat_img_color(batch_noise, self.batch_size_sqrt, self.cnn_format))
+            store_image("test_out/" + str(iter) + "_edge.jpg",
+                        concat_img(batch_edge, self.batch_size_sqrt, self.cnn_format))

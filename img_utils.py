@@ -6,45 +6,50 @@ from random import randint
 
 
 def get_image(image_path):
-    return transform(imread(image_path))
-
-
-def transform(image, npx=512, is_crop=True):
+    image = cv2.imread(image_path, 1)
     cropped_image = cv2.resize(image, (256, 256))
-
     return np.array(cropped_image)
 
 
-def imread(path):
-    readimage = cv2.imread(path, 1)
-    return readimage
+def concat_img_color(images, proportion, data_format):
+    height = width = None
+    if data_format == 'NHWC':
+        height, width = images.shape[1], images.shape[2]
+    elif data_format == 'NCHW':
+        height, width = images.shape[2], images.shape[3]
 
+    # create a holder for concatenated_images
+    img = np.zeros((height * proportion, width * proportion, 3))
 
-def merge_color(images, size):
-    h, w = images.shape[1], images.shape[2]
-    img = np.zeros((h * size[0], w * size[1], 3))
+    for index, image in enumerate(images):
+        i = index / proportion
+        j = index % proportion
 
-    for idx, image in enumerate(images):
-        i = idx % size[1]
-        j = idx / size[1]
-        img[j * h:j * h + h, i * w:i * w + w, :] = image
+        img[i * height:i * height + height, j * width:j * width + width, :] = image
 
     return img
 
 
-def merge(images, size):
-    h, w = images.shape[1], images.shape[2]
-    img = np.zeros((h * size[0], w * size[1], 1))
+def concat_img(images, proportion, data_format):
+    height = width = None
+    if data_format == 'NHWC':
+        height, width = images.shape[1], images.shape[2]
+    elif data_format == 'NCHW':
+        height, width = images.shape[2], images.shape[3]
 
-    for idx, image in enumerate(images):
-        i = idx % size[1]
-        j = idx / size[1]
-        img[j * h:j * h + h, i * w:i * w + w] = image
+    # create a holder for concatenated_images
+    img = np.zeros((height * proportion, width * proportion, 1))
+
+    for index, image in enumerate(images):
+        i = index / proportion
+        j = index % proportion
+
+        img[i * height:i * height + height, j * width:j * width + width] = image
 
     return img[:, :, 0]
 
 
-def ims(name, img):
+def store_image(name, img):
     print "saving img " + name
     cv2.imwrite(name, img * 255)
 
@@ -60,10 +65,8 @@ def imageblur(cimg, sampling=False):
     return cv2.blur(cimg, (100, 100))
 
 
-def sample_image_processing(data, batch_size):
+def sample_image_processing(data, batch_size, data_format):
     batch_size_sqrt = int(math.sqrt(batch_size))
-
-    print data[0]
     base = np.array([get_image(sample_file) for sample_file in data[0:batch_size]])
     base_normalized = base / 255.0
 
@@ -74,10 +77,10 @@ def sample_image_processing(data, batch_size):
 
     base_colors = np.array([imageblur(ba) for ba in base]) / 255.0
 
-    print("Sample Image processing: Result in results folder")
-    ims("results/base.png", merge_color(base_normalized, [batch_size_sqrt, batch_size_sqrt]))
-    ims("results/base_line.jpg", merge(base_edge, [batch_size_sqrt, batch_size_sqrt]))
-    ims("results/base_colors.jpg", merge_color(base_colors, [batch_size_sqrt, batch_size_sqrt]))
+    print("Sample Image processing: Result in output folder")
+    store_image("output/base.png", concat_img_color(base_normalized, batch_size_sqrt, data_format))
+    store_image("output/base_line.jpg", concat_img(base_edge, batch_size_sqrt, data_format))
+    store_image("output/base_colors.jpg", concat_img_color(base_colors, batch_size_sqrt, data_format))
 
 
 def process_batch(batch_files, data_format='NHWC'):

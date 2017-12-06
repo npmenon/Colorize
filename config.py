@@ -17,6 +17,7 @@ class GANConfig(object):
     lambda_scaling = 100
 
     max_step = 20000
+    test_size = 200
 
     cnn_format = 'NCHW'
     discount = 0.99
