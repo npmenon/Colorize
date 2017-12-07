@@ -63,6 +63,10 @@ class AutoColor(BaseModel):
         # save global step
         tf.add_to_collection('global_step', self.step_op)
 
+        # Build summary
+        self.merged_summary = tf.summary.merge_all()
+        self.summary_writer = tf.summary.FileWriter(self.config.logdir, self.sess.graph)
+
         # initialize all variables
         self.sess.run(tf.global_variables_initializer())
 
@@ -112,28 +116,31 @@ class AutoColor(BaseModel):
 
     # Method to calculate total loss
     def calculate_loss(self):
-        # Discriminator Loss
-        disc_loss_for_positive_examples = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.positive_logits,
-                                                    labels=tf.ones_like(self.positive_logits)))
+        with tf.variable_scope('loss'):
+            # Discriminator Loss
+            disc_loss_for_positive_examples = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.positive_logits,
+                                                        labels=tf.ones_like(self.positive_logits)))
 
-        disc_loss_for_negative_examples = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.negative_logits,
-                                                    labels=tf.zeros_like(self.negative_logits)))
+            disc_loss_for_negative_examples = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.negative_logits,
+                                                        labels=tf.zeros_like(self.negative_logits)))
 
-        # total discriminator loss
-        total_disc_loss = disc_loss_for_positive_examples + disc_loss_for_negative_examples
+            # total discriminator loss
+            total_disc_loss = disc_loss_for_positive_examples + disc_loss_for_negative_examples
 
-        # Generator Loss
-        gen_out_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.negative_logits,
-                                                                              labels=tf.ones_like(
-                                                                                  self.negative_logits)))
-        # L1 loss for geneator
-        gen_L1_loss = self.lambda_scaling * tf.reduce_mean(tf.abs(self.real_images - self.generated_images))
+            # Generator Loss
+            gen_out_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.negative_logits,
+                                                                                  labels=tf.ones_like(
+                                                                                      self.negative_logits)))
+            # L1 loss for geneator
+            gen_L1_loss = self.lambda_scaling * tf.reduce_mean(tf.abs(self.real_images - self.generated_images))
 
-        # Total Generator loss
-        gen_loss = gen_out_loss + gen_L1_loss
+            # Total Generator loss
+            gen_loss = gen_out_loss + gen_L1_loss
 
+        tf.summary.scalar("Disc_Loss", total_disc_loss)
+        tf.summary.scalar("Gen_Loss", gen_loss)
         return total_disc_loss, gen_loss
 
     # Input is (256 x 256 x c_channels)
@@ -269,6 +276,7 @@ class AutoColor(BaseModel):
 
         num_iter = len(data) // self.batch_size
 
+        counter = 0
         for self.step in tqdm(range(self.start_step, self.max_step), ncols=70, initial=self.start_step):
 
             # save current step for future
@@ -287,6 +295,12 @@ class AutoColor(BaseModel):
                 gen_loss, _ = self.sess.run([self.gen_loss, self.gen_optimizer],
                                             feed_dict={self.edge_image: batch_edge, self.noise: batch_noise,
                                                        self.real_images: batch_normalized})
+                summary = self.sess.run(self.merged_summary,
+                                        feed_dict={self.edge_image: batch_edge, self.noise: batch_noise,
+                                                   self.real_images: batch_normalized})
+
+                counter += 1
+                self.summary_writer.add_summary(summary, global_step=counter)
 
                 print('Epoch: {0}, Batch: {1} of {2}, gen_loss: {3}, dis_loss: {4}'.format(self.step, iter, num_iter,
                                                                                            gen_loss, dis_loss))

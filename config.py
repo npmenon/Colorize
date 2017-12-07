@@ -20,12 +20,9 @@ class GANConfig(object):
     test_size = 200
 
     cnn_format = 'NCHW'
-    discount = 0.99
-
-    _test_step = 5000
-    _save_step = _test_step * 10
 
     backend = 'tf'
+    logdir = './logs/'
 
 
 def get_config(FLAGS):
