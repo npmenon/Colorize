@@ -7,8 +7,8 @@ from config import get_config
 flags = tf.app.flags
 
 # Etc
-flags.DEFINE_boolean('use_gpu', True, 'Whether to use gpu or not')
-flags.DEFINE_string('gpu_fraction', '1/1', 'idx / # of gpu fraction e.g. 1/3, 2/3, 3/3')
+flags.DEFINE_boolean('use_gpu', False, 'Whether to use gpu or not')
+flags.DEFINE_string('gpu_fraction', '7/10', 'idx / # of gpu fraction e.g. 1/3, 2/3, 3/3')
 flags.DEFINE_boolean('is_train', True, 'Whether to do training or testing')
 flags.DEFINE_integer('random_seed', 123, 'Value of random seed')
 
@@ -32,13 +32,15 @@ def calc_gpu_fraction(fraction_string):
 
 
 def main(_):
-    gpu_options = tf.GPUOptions(
-        per_process_gpu_memory_fraction=0.7)
-
     # gpu_options = tf.GPUOptions(
     #     per_process_gpu_memory_fraction=calc_gpu_fraction(FLAGS.gpu_fraction))
 
-    with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
+    tf_config = tf.ConfigProto()
+    tf_config.gpu_options.allocator_type = 'BFC'
+    tf_config.gpu_options.per_process_gpu_memory_fraction = 0.4
+    # tf_config.gpu_options.allow_growth = True
+
+    with tf.Session(config=tf_config) as sess:
         config = get_config(FLAGS) or FLAGS
 
         # test gpu

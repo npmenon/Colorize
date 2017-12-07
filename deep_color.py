@@ -114,22 +114,22 @@ class AutoColor(BaseModel):
     def calculate_loss(self):
         # Discriminator Loss
         disc_loss_for_positive_examples = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=self.positive_logits,
-                                                    logits=tf.ones_like(self.positive_logits)))
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.positive_logits,
+                                                    labels=tf.ones_like(self.positive_logits)))
 
         disc_loss_for_negative_examples = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(labels=self.negative_logits,
-                                                    logits=tf.zeros_like(self.negative_logits)))
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.negative_logits,
+                                                    labels=tf.zeros_like(self.negative_logits)))
 
         # total discriminator loss
         total_disc_loss = disc_loss_for_positive_examples + disc_loss_for_negative_examples
 
         # Generator Loss
-        gen_out_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.negative_logits,
-                                                                              logits=tf.ones_like(
+        gen_out_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.negative_logits,
+                                                                              labels=tf.ones_like(
                                                                                   self.negative_logits)))
         # L1 loss for geneator
-        gen_L1_loss = self.lambda_scaling * tf.reduce_mean(tf.abs(self.generated_images - self.real_images))
+        gen_L1_loss = self.lambda_scaling * tf.reduce_mean(tf.abs(self.real_images - self.generated_images))
 
         # Total Generator loss
         gen_loss = gen_out_loss + gen_L1_loss
@@ -141,20 +141,19 @@ class AutoColor(BaseModel):
         # Building encoders
 
         with tf.variable_scope('gen_layer1'):
-            enc_layer1 = leaky_relu(conv2d(in_image, out_dimen, data_format=self.cnn_format))  # (128 x 128 x out_dimen)
+            enc_layer1 = conv2d(in_image, out_dimen, data_format=self.cnn_format)  # (128 x 128 x out_dimen)
 
-        enc_layer2 = encoder_layer('gen_layer2', enc_layer1, out_dimen * 2,
+        enc_layer2 = encoder_layer('gen_layer2', leaky_relu(enc_layer1), out_dimen * 2,
                                    self.cnn_format)  # is (64 x 64 x out_dimen * 2)
-        enc_layer3 = encoder_layer('gen_layer3', enc_layer2, out_dimen * 4,
+        enc_layer3 = encoder_layer('gen_layer3', leaky_relu(enc_layer2), out_dimen * 4,
                                    self.cnn_format)  # is (32 x 32 x out_dimen * 4)
-        enc_layer4 = encoder_layer('gen_layer4', enc_layer3, out_dimen * 8,
+        enc_layer4 = encoder_layer('gen_layer4', leaky_relu(enc_layer3), out_dimen * 8,
                                    self.cnn_format)  # is (16 x 16 x out_dimen * 8)
-        enc_layer5 = encoder_layer('gen_layer5', enc_layer4, out_dimen * 8, self.cnn_format,
-                                   activation=tf.nn.relu)  # is (8 x 8 x self.gf_dim*8)
+        enc_layer5 = encoder_layer('gen_layer5', leaky_relu(enc_layer4), out_dimen * 8,
+                                   self.cnn_format)  # is (8 x 8 x self.gf_dim*8)
 
         out_image_size = self.output_image_size
 
-        # Todo: IF GPU, output shape will change
         # Building decoders
         gpu_enabled = False
         if self.cnn_format == 'NCHW':
@@ -163,12 +162,12 @@ class AutoColor(BaseModel):
         ###########################################################################################################
 
         # Decoder 1
-        img_size = out_image_size / 16
+        img_size = int(out_image_size / 16)
         out_shape = [self.batch_size, img_size, img_size, out_dimen * 8]
         if gpu_enabled:
             out_shape = [self.batch_size, out_dimen * 8, img_size, img_size]
 
-        dec_layer1 = decoder_layer('gen_layer6', enc_layer5, out_shape, self.cnn_format)
+        dec_layer1 = decoder_layer('gen_layer6', tf.nn.relu(enc_layer5), out_shape, self.cnn_format)
 
         # skip connection from enc_layer4
         if gpu_enabled:
@@ -179,12 +178,12 @@ class AutoColor(BaseModel):
         ###########################################################################################################
 
         # Decoder 2
-        img_size = out_image_size / 8
+        img_size = int(out_image_size / 8)
         out_shape = [self.batch_size, img_size, img_size, out_dimen * 4]
         if gpu_enabled:
             out_shape = [self.batch_size, out_dimen * 4, img_size, img_size]
 
-        dec_layer2 = decoder_layer('gen_layer7', dec_layer1, out_shape, self.cnn_format)
+        dec_layer2 = decoder_layer('gen_layer7', tf.nn.relu(dec_layer1), out_shape, self.cnn_format)
 
         # skip connection from enc_layer3
         if gpu_enabled:
@@ -195,12 +194,12 @@ class AutoColor(BaseModel):
         ###########################################################################################################
 
         # Decoder 3
-        img_size = out_image_size / 4
+        img_size = int(out_image_size / 4)
         out_shape = [self.batch_size, img_size, img_size, out_dimen * 2]
         if gpu_enabled:
             out_shape = [self.batch_size, out_dimen * 2, img_size, img_size]
 
-        dec_layer3 = decoder_layer('gen_layer8', dec_layer2, out_shape, self.cnn_format)
+        dec_layer3 = decoder_layer('gen_layer8', tf.nn.relu(dec_layer2), out_shape, self.cnn_format)
 
         # skip connection from enc_layer2
         if gpu_enabled:
@@ -211,12 +210,12 @@ class AutoColor(BaseModel):
         ###########################################################################################################
 
         # Decoder 4
-        img_size = out_image_size / 2
+        img_size = int(out_image_size / 2)
         out_shape = [self.batch_size, img_size, img_size, out_dimen]
         if gpu_enabled:
             out_shape = [self.batch_size, out_dimen, img_size, img_size]
 
-        dec_layer4 = decoder_layer('gen_layer9', dec_layer3, out_shape, self.cnn_format)
+        dec_layer4 = decoder_layer('gen_layer9', tf.nn.relu(dec_layer3), out_shape, self.cnn_format)
 
         # skip connection from enc_layer1
         if gpu_enabled:
@@ -231,7 +230,7 @@ class AutoColor(BaseModel):
         if gpu_enabled:
             out_shape = [self.batch_size, self.output_colors, out_image_size, out_image_size]
 
-        dec_layer5 = decoder_layer('gen_layer10', dec_layer4, out_shape, self.cnn_format)
+        dec_layer5 = decoder_layer('gen_layer10', tf.nn.relu(dec_layer4), out_shape, self.cnn_format)
 
         # (256 x 256 x 3 (RGB))
         return tf.nn.tanh(dec_layer5)
@@ -244,19 +243,17 @@ class AutoColor(BaseModel):
             assert tf.get_variable_scope().reuse == False
 
         with tf.variable_scope('dis_layer1'):
-            l1 = leaky_relu(conv2d(input_image, out_dimen, data_format=self.cnn_format))  # (128 x 128 x out_dimen)
+            l1 = conv2d(input_image, out_dimen, data_format=self.cnn_format)  # (128 x 128 x out_dimen)
 
-        l2 = encoder_layer('dis_layer2', l1, out_dimen * 2, self.cnn_format)  # (64 x 64 x out_dimen * 2)
-        l3 = encoder_layer('dis_layer3', l2, out_dimen * 4, self.cnn_format)  # (32 x 32 x out_dimen * 4)
+        l2 = encoder_layer('dis_layer2', leaky_relu(l1), out_dimen * 2, self.cnn_format)  # (64 x 64 x out_dimen * 2)
+        l3 = encoder_layer('dis_layer3', leaky_relu(l2), out_dimen * 4, self.cnn_format)  # (32 x 32 x out_dimen * 4)
 
         with tf.variable_scope('dis_layer4'):
-            l4 = leaky_relu(batch_norm(
-                conv2d(l3, out_dimen * 8, stride=[1, 1], data_format=self.cnn_format),
-                data_format=self.cnn_format))  # (16 x 16 x out_dimen * 8)
+            l4 = batch_norm(conv2d(leaky_relu(l3), out_dimen * 8, stride=[1, 1], data_format=self.cnn_format),
+                            data_format=self.cnn_format)  # (16 x 16 x out_dimen * 8)
 
         with tf.variable_scope('dis_layer5'):
-            # Todo: Check linear gives correct shape with GPU
-            l5 = linear(tf.reshape(l4, [self.batch_size, -1]), 1, self.cnn_format)
+            l5 = linear(tf.reshape(leaky_relu(l4), [self.batch_size, -1]), 1, self.cnn_format)
 
         return tf.nn.sigmoid(l5), l5
 
@@ -266,11 +263,11 @@ class AutoColor(BaseModel):
 
         data = glob(os.path.join("imgs", "*.jpg"))
 
-        # sample_image_processing(data, self.batch_size, self.cnn_format)
+        # sample_image_processing(data, self.batch_size, self.sess, self.cnn_format)
         batch_files = data[0:self.batch_size]
         valid_norm, valid_edge, valid_noise = process_batch(batch_files, self.cnn_format)
 
-        num_iter = len(data) / self.batch_size
+        num_iter = len(data) // self.batch_size
 
         for self.step in tqdm(range(self.start_step, self.max_step), ncols=70, initial=self.start_step):
 
@@ -282,7 +279,7 @@ class AutoColor(BaseModel):
                 batch_files = data[iter * self.batch_size: (iter + 1) * self.batch_size]
 
                 # process the batch of images
-                batch_normalized, batch_edge, batch_noise = process_batch(batch_files, self.cnn_format)
+                batch_normalized, batch_edge, batch_noise = process_batch(batch_files, self.sess, self.cnn_format)
 
                 dis_loss, _ = self.sess.run([self.dis_loss, self.dis_optimizer],
                                             feed_dict={self.edge_image: batch_edge, self.noise: batch_noise,
@@ -304,27 +301,30 @@ class AutoColor(BaseModel):
                                              feed_dict={self.edge_image: valid_edge, self.noise: valid_noise,
                                                         self.real_images: valid_norm})
                     store_image("train_out/" + str(self.step) + '_' + str(iter) + "_gen.jpg",
-                                concat_img_color(gen_test, self.batch_size_sqrt, self.cnn_format))
+                                concat_img_color(gen_test, self.batch_size_sqrt, self.cnn_format), self.sess,
+                                self.cnn_format)
 
     def test(self):
         data = glob(os.path.join("imgs", "*.jpg"))
-        num_iter = self.test_size / self.batch_size
+        num_iter = self.test_size // self.batch_size
 
         for iter in xrange(num_iter):
             # select next batch of images
             batch_files = data[iter * self.batch_size: (iter + 1) * self.batch_size]
 
             # process the batch of images
-            batch_normalized, batch_edge, batch_noise = process_batch(batch_files, self.cnn_format)
+            batch_normalized, batch_edge, batch_noise = process_batch(batch_files, self.sess, self.cnn_format)
 
             gen_test = self.sess.run(self.generated_images,
                                      feed_dict={self.edge_image: batch_edge, self.noise: batch_noise,
                                                 self.real_images: batch_normalized})
             store_image("test_out/" + str(iter) + "_gen.jpg",
-                        concat_img_color(gen_test, self.batch_size_sqrt, self.cnn_format))
+                        concat_img_color(gen_test, self.batch_size_sqrt, self.cnn_format), self.sess, self.cnn_format)
             store_image("test_out/" + str(iter) + "_real.jpg",
-                        concat_img_color(batch_normalized, self.batch_size_sqrt, self.cnn_format))
+                        concat_img_color(batch_normalized, self.batch_size_sqrt, self.cnn_format), self.sess,
+                        self.cnn_format)
             store_image("test_out/" + str(iter) + "_noise.jpg",
-                        concat_img_color(batch_noise, self.batch_size_sqrt, self.cnn_format))
+                        concat_img_color(batch_noise, self.batch_size_sqrt, self.cnn_format), self.sess,
+                        self.cnn_format)
             store_image("test_out/" + str(iter) + "_edge.jpg",
-                        concat_img(batch_edge, self.batch_size_sqrt, self.cnn_format))
+                        concat_img(batch_edge, self.batch_size_sqrt, self.cnn_format), self.sess, self.cnn_format)

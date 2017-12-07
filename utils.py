@@ -46,6 +46,7 @@ def deconv2d(x,
              name='deconv2d'):
     with tf.variable_scope(name):
         kernel_shape = []
+        bias_out_shape = []
 
         if kernel_size is None:
             kernel_size = [5, 5]
@@ -55,16 +56,18 @@ def deconv2d(x,
 
         if data_format == 'NCHW':
             stride = [1, 1, stride[0], stride[1]]
-            kernel_shape = [kernel_size[0], kernel_size[1], output_shape[-1], x.get_shape()[1]]
+            kernel_shape = [kernel_size[0], kernel_size[1], output_shape[1], x.get_shape()[1]]
+            bias_out_shape = [output_shape[1]]
 
         elif data_format == 'NHWC':
             stride = [1, stride[0], stride[1], 1]
             kernel_shape = [kernel_size[0], kernel_size[1], output_shape[-1], x.get_shape()[-1]]
+            bias_out_shape = [output_shape[-1]]
 
         w = tf.get_variable('weight', kernel_shape, tf.float32, initializer=initializer)
         deconv = tf.nn.conv2d_transpose(x, w, strides=stride, output_shape=output_shape, data_format=data_format)
 
-        b = tf.get_variable('biases', [output_shape[-1]], initializer=tf.constant_initializer(0.0))
+        b = tf.get_variable('biases', bias_out_shape, initializer=tf.constant_initializer(0.0))
         bias_add_out = tf.nn.bias_add(deconv, b, data_format=data_format)
 
         out = tf.reshape(bias_add_out, deconv.get_shape())
@@ -81,26 +84,22 @@ def leaky_relu(x, alpha=0.2):
     return tf.maximum(x, alpha * x)
 
 
-def encoder_layer(name, input, out_dimen, data_format='NHWC', activation=leaky_relu):
+def encoder_layer(name, input, out_dimen, data_format='NHWC'):
     with tf.variable_scope(name):
         # convolve image and filter
         conv2d_output = conv2d(input, out_dimen, data_format=data_format)
         # batch normalize the output to reduce co-variate shift
         batch_norm_out = batch_norm(conv2d_output, data_format)
-        # pass it through non-linear activation fn
-        out = activation(batch_norm_out)
-    return out
+    return batch_norm_out
 
 
-def decoder_layer(name, input, out_shape, data_format='NHWC', activation=tf.nn.relu):
+def decoder_layer(name, input, out_shape, data_format='NHWC'):
     with tf.variable_scope(name):
         # upsample image
         deconv2d_out = deconv2d(input, out_shape, data_format=data_format)
         # batch normalize the output to reduce co-variate shift
         batch_norm_out = batch_norm(deconv2d_out, data_format)
-        # pass it through non-linear activation fn
-        out = activation(batch_norm_out)
-    return out
+    return batch_norm_out
 
 
 def linear(input, output_size, data_format='NHWC', stddev=0.02, bias_start=0.0, name='linear'):
@@ -112,6 +111,6 @@ def linear(input, output_size, data_format='NHWC', stddev=0.02, bias_start=0.0, 
         bias = tf.get_variable('bias', [output_size],
                                initializer=tf.constant_initializer(bias_start))
 
-        out = tf.nn.bias_add(tf.matmul(input, weight), bias, data_format=data_format)
+        out = tf.nn.bias_add(tf.matmul(input, weight), bias)
 
         return out
